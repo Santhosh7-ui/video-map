@@ -15,6 +15,20 @@ const state = {
     tourIndex: 0,
     animFrame: null,
     pathAnimT: 0,        // 0–1 animated draw progress
+    visitedPins: new Set(), // set of pin ids reached during tour
+    activeTourPinId: null,  // the pin currently being shown in callout
+};
+
+/* ─────────────────────────────────────────────
+   HUD ARROW GEOMETRY CONSTANTS
+   (must match in both canvas drawHudArrow and HTML _calloutBoxPos)
+───────────────────────────────────────────── */
+const HUD = {
+    STUB: 16,   // short horizontal stub from pin
+    DIAG_DX: 44,   // horizontal component of diagonal line
+    DIAG_DY: 52,   // vertical component (upward)
+    HORIZ: 38,   // final horizontal segment
+    PIN_Y: 18,   // how far above pin center to start the line
 };
 
 /* ─────────────────────────────────────────────
@@ -80,11 +94,28 @@ function drawPath(overrideT = null) {
         }
     }
 
-    // Always draw pin rings + callout labels
+    // Draw pin rings + callouts
     state.pins.forEach((pin, i) => {
         const pt = latLngToCanvas(pin.latlng);
         drawPinRing(pt.x, pt.y, i);
-        drawPinCallout(pt.x, pt.y, i, pin);
+
+        if (!state.isTourPlaying) {
+            // Static editor view — show all callouts
+            drawPinCallout(pt.x, pt.y, i, pin);
+        } else if (pin.id === state.activeTourPinId) {
+            // Active tour pin — draw HUD arrow pointing to where the HTML box actually is
+            const neonColors = ['#ff4d6d', '#a855f7', '#247bff', '#22d3ee', '#f472b6'];
+            const boxPos = _calloutBoxPos(pt.x, pt.y, i);
+            const boxW = 270;
+            drawHudArrow(pt.x, pt.y, i, neonColors[i % neonColors.length], boxPos, boxW);
+        } else if (state.visitedPins.has(pin.id)) {
+            // Already visited — show dimmed static callout
+            ctx.save();
+            ctx.globalAlpha = 0.45;
+            drawPinCallout(pt.x, pt.y, i, pin);
+            ctx.restore();
+        }
+        // Not yet visited — show nothing
     });
 }
 
@@ -243,122 +274,191 @@ function drawPinRing(x, y, index) {
     ctx.stroke();
 }
 
-/* ── Pin callout label (reference style: leader line + glass label box) ── */
+/* ── Static pin callout label (editor/post-visit view) ── */
 function drawPinCallout(x, y, index, pin) {
     const neonColors = ['#ff4d6d', '#a855f7', '#247bff', '#22d3ee', '#f472b6'];
     const color = neonColors[index % neonColors.length];
-
-    // Alternate label direction: even pins → upper-left, odd → upper-right
     const goRight = (index % 2 === 1);
-    const lineLen = 70;
-    const labelPad = { x: 10, y: 7 };
-    const labelW = 160;
-    const labelH = pin.videoURL ? 52 : 36;
+    const labelW = 148;
+    const labelH = 34;
 
-    // Leader line: from pin top, go diagonal then horizontal
-    const diagEndX = goRight ? x + lineLen * 0.55 : x - lineLen * 0.55;
-    const diagEndY = y - lineLen * 0.85;
-    const horizEndX = goRight ? diagEndX + lineLen * 0.75 : diagEndX - lineLen * 0.75;
-    const horizEndY = diagEndY;
+    // Simple diagonal + horiz leader line
+    const diagX = goRight ? x + 38 : x - 38;
+    const diagY = y - 42;
+    const horizX = goRight ? diagX + 36 : diagX - 36;
 
-    // Draw leader line
     ctx.beginPath();
-    ctx.moveTo(x, y - 16); // start at top of pin icon area
-    ctx.lineTo(diagEndX, diagEndY);
-    ctx.lineTo(horizEndX, horizEndY);
+    ctx.moveTo(x, y - 14);
+    ctx.lineTo(diagX, diagY);
+    ctx.lineTo(horizX, diagY);
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.setLineDash([]);
     ctx.stroke();
 
-    // Small dot at line start
+    // Dot at pin
     ctx.beginPath();
-    ctx.arc(x, y - 16, 2.5, 0, Math.PI * 2);
+    ctx.arc(x, y - 14, 3, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
 
-    // Label box position
-    const boxX = goRight ? horizEndX : horizEndX - labelW;
-    const boxY = horizEndY - labelH - 2;
+    // Box below horiz end
+    const boxX = goRight ? horizX : horizX - labelW;
+    const boxY = diagY + 4;
 
-    // Draw glass box
     ctx.save();
     ctx.globalAlpha = 0.88;
-    ctx.fillStyle = 'rgba(6,13,24,0.82)';
-    _roundRect(ctx, boxX, boxY, labelW, labelH, 8);
+    ctx.fillStyle = 'rgba(6,13,24,0.85)';
+    _roundRect(ctx, boxX, boxY, labelW, labelH, 6);
     ctx.fill();
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.55;
-    _roundRect(ctx, boxX, boxY, labelW, labelH, 8);
+    ctx.globalAlpha = 0.5;
+    _roundRect(ctx, boxX, boxY, labelW, labelH, 6);
     ctx.stroke();
     ctx.restore();
 
-    // Pin number badge
+    // Badge
+    const cy2 = boxY + labelH / 2;
     ctx.save();
     ctx.globalAlpha = 0.95;
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(boxX + 14, boxY + 14, 10, 0, Math.PI * 2);
+    ctx.arc(boxX + 14, cy2, 9, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 10px -apple-system, SF Pro, Inter, sans-serif';
+    ctx.font = 'bold 9px Inter,sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(index + 1, boxX + 14, boxY + 14);
+    ctx.fillText(index + 1, boxX + 14, cy2);
     ctx.restore();
 
-    // Pin name text
+    // Name
     ctx.save();
-    ctx.globalAlpha = 0.95;
+    ctx.globalAlpha = 0.9;
     ctx.fillStyle = '#e8f0ff';
-    ctx.font = '600 12px -apple-system, SF Pro, Inter, sans-serif';
+    ctx.font = '500 11px Inter,sans-serif';
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    const nameText = (pin.name || 'Stopover').slice(0, 18);
-    ctx.fillText(nameText, boxX + 30, boxY + 8);
+    ctx.textBaseline = 'middle';
+    ctx.fillText((pin.name || 'Stopover').slice(0, 16), boxX + 28, cy2);
     ctx.restore();
+}
 
-    // Video row
-    if (pin.videoURL) {
-        // Play button circle
-        ctx.save();
-        ctx.globalAlpha = 0.9;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(boxX + 14, boxY + 38, 9, 0, Math.PI * 2);
-        ctx.fill();
-        // Play triangle
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.moveTo(boxX + 11, boxY + 34);
-        ctx.lineTo(boxX + 11, boxY + 42);
-        ctx.lineTo(boxX + 20, boxY + 38);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
+/* ──────────────────────────────────────────────────────────────────
+   HUD ARROW — sci-fi style leader line drawn on canvas during tour.
+   The HTML .pvo video box sits at the endpoint of this arrow.
+   Geometry constants come from the HUD object defined at the top.
+   goRight → arrow goes right;  goLeft → goes left.
+────────────────────────────────────────────────────────────────── */
+function drawHudArrow(x, y, index, color, boxPos, boxW) {
+    const goRight = (index % 2 === 1);
+    const dir = goRight ? 1 : -1;
 
-        // Video label
-        ctx.save();
-        ctx.globalAlpha = 0.7;
-        ctx.fillStyle = color;
-        ctx.font = '500 10.5px -apple-system, SF Pro, Inter, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        const fname = (pin.videoFile ? pin.videoFile.name : '').slice(0, 16);
-        ctx.fillText(fname || 'Video ready', boxX + 30, boxY + 38);
-        ctx.restore();
-    } else {
-        // No video hint
-        ctx.save();
-        ctx.globalAlpha = 0.38;
-        ctx.fillStyle = '#8090b0';
-        ctx.font = '400 10px -apple-system, SF Pro, Inter, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('No video attached', boxX + 10, boxY + labelH - 10);
-        ctx.restore();
+    // Pin origin
+    const startX = x;
+    const startY = y - HUD.PIN_Y;
+
+    // Target: top-left or top-right corner of the HTML box
+    const targetX = goRight ? boxPos.x : boxPos.x + boxW;
+    const targetY = boxPos.y + 8;  // 8px down from top edge of box
+
+    // Midpoint: create a short horizontal stub from pin, then diagonal to box
+    const stubX = startX + dir * HUD.STUB;
+    const stubY = startY;
+    // Junction point: same height as target, to create the angular HUD knee
+    const kneeX = targetX - dir * 24;  // 24px before the box edge horizontally
+    const kneeY = targetY;
+
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'miter';
+
+    // ── Outer glow pass ──
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(stubX, stubY);
+    ctx.lineTo(kneeX, kneeY);
+    ctx.lineTo(targetX, targetY);
+    ctx.strokeStyle = color + '44';
+    ctx.lineWidth = 7;
+    ctx.stroke();
+
+    // ── Main line ──
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(stubX, stubY);
+    ctx.lineTo(kneeX, kneeY);
+    ctx.lineTo(targetX, targetY);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // ── HUD tick marks on the diagonal segment ──
+    const ddx = kneeX - stubX, ddy = kneeY - stubY;
+    const dLen = Math.sqrt(ddx * ddx + ddy * ddy);
+    if (dLen > 0) {
+        const nx = -ddy / dLen, ny = ddx / dLen;
+        const midDX = (stubX + kneeX) / 2;
+        const midDY = (stubY + kneeY) / 2;
+        const tickLen = 5;
+        // Tick 1
+        ctx.beginPath();
+        ctx.moveTo(midDX + nx * tickLen, midDY + ny * tickLen);
+        ctx.lineTo(midDX - nx * tickLen, midDY - ny * tickLen);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Tick 2 — slightly offset along diagonal
+        const off = 9;
+        const offX = midDX + off * (ddx / dLen);
+        const offY = midDY + off * (ddy / dLen);
+        ctx.beginPath();
+        ctx.moveTo(offX + nx * (tickLen * 0.6), offY + ny * (tickLen * 0.6));
+        ctx.lineTo(offX - nx * (tickLen * 0.6), offY - ny * (tickLen * 0.6));
+        ctx.stroke();
     }
+
+    // ── Origin circle (hollow outer + filled inner) ──
+    ctx.beginPath();
+    ctx.arc(startX, startY, 7, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.9;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(startX, startY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 1;
+    ctx.fill();
+
+    // ── Corner bracket at box entry point ──
+    const bk = 9;
+    ctx.beginPath();
+    ctx.moveTo(targetX, targetY - bk);
+    ctx.lineTo(targetX, targetY);
+    ctx.lineTo(targetX + dir * bk, targetY);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 1;
+    ctx.stroke();
+
+    // ── Arrowhead pointing into the box ──
+    const aLen = 9, aAngle = Math.PI / 5;
+    const aDir = goRight ? 0 : Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(targetX, targetY);
+    ctx.lineTo(targetX - Math.cos(aDir - aAngle) * aLen, targetY - Math.sin(aDir - aAngle) * aLen);
+    ctx.moveTo(targetX, targetY);
+    ctx.lineTo(targetX - Math.cos(aDir + aAngle) * aLen, targetY - Math.sin(aDir + aAngle) * aLen);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    ctx.restore();
 }
 
 /* Helper: rounded rect path (no fill/stroke — caller does that) */
@@ -708,20 +808,28 @@ let _pvoTimer = null;     // progress animation frame id
 let _pvoPin = null;     // pin currently shown
 let _pvoPinIdx = 0;
 
-/** Compute the callout box top-left position in CSS coords */
+/** Place .pvo box BELOW+SIDE of pin — always near pin regardless of zoom/pan */
 function _calloutBoxPos(cx, cy, index) {
-    const goRight = (index % 2 === 1);
-    const lineLen = 70;
-    const labelW = 260;             // matches .pvo width
-    const diagEndX = goRight ? cx + lineLen * 0.55 : cx - lineLen * 0.55;
-    const diagEndY = cy - lineLen * 0.85;
-    const horizEndX = goRight ? diagEndX + lineLen * 0.75 : diagEndX - lineLen * 0.75;
-    const boxX = goRight ? horizEndX : horizEndX - labelW;
-    const boxY = diagEndY - 160;  // approx overlay height offset
-    // Clamp so it doesn't go off-screen
+    const BOX_W = 270;  // must match .pvo CSS width
+    const BOX_H = 200;  // approx box height (header + 16/9 video + coords)
+    const DY = 55;   // vertical offset below pin center
+    const DX = 20;   // horizontal offset from pin center
+
+    // Prefer right side for odd pins, left for even
+    let goRight = (index % 2 === 1);
+
+    // Flip if preferred side would overflow viewport
+    let boxX = goRight ? cx + DX : cx - DX - BOX_W;
+    if (boxX < 8) { goRight = true; boxX = cx + DX; }
+    if (boxX + BOX_W > window.innerWidth - 8) { goRight = false; boxX = cx - DX - BOX_W; }
+
+    // Vertical: below pin; if not enough space below, go above
+    let boxY = cy + DY;
+    if (boxY + BOX_H > window.innerHeight - 8) boxY = cy - DY - BOX_H;
+
     return {
-        x: Math.max(10, Math.min(boxX, window.innerWidth - labelW - 10)),
-        y: Math.max(60, Math.min(boxY, window.innerHeight - 200)),
+        x: Math.max(8, Math.min(boxX, window.innerWidth - BOX_W - 8)),
+        y: Math.max(56, Math.min(boxY, window.innerHeight - BOX_H - 8)),
     };
 }
 
@@ -739,18 +847,25 @@ function openPinVideo(pin, index) {
     return new Promise(resolve => {
         _pvoPin = pin;
         _pvoPinIdx = index;
+
+        // Mark pin reached — canvas draws HUD arrow for this pin
+        state.visitedPins.add(pin.id);
+        state.activeTourPinId = pin.id;
+        drawPath(1);
+
         const color = _neonColors[index % _neonColors.length];
 
         // Header
         _pvoBadge.textContent = index + 1;
         _pvoBadge.style.background = color;
-        _pvoBadge.style.boxShadow = `0 0 10px ${color}88`;
+        _pvoBadge.style.boxShadow = `0 0 12px ${color}99`;
         _pvoName.textContent = pin.name || 'Stopover';
         _pvoCoords.textContent = `${pin.latlng.lat.toFixed(5)}, ${pin.latlng.lng.toFixed(5)}`;
 
-        // Border colour matches pin
-        _pvoEl.style.borderColor = `${color}55`;
-        _pvoEl.style.boxShadow = `0 16px 48px rgba(0,0,0,.75), 0 0 0 1px ${color}44, 0 0 20px ${color}22`;
+        // HUD border color
+        _pvoEl.style.setProperty('--hud-color', color);
+        _pvoEl.style.borderColor = color + '66';
+        _pvoEl.style.boxShadow = `0 0 0 1px ${color}33, 0 12px 40px rgba(0,0,0,.8), 0 0 30px ${color}18`;
 
         // Video
         if (pin.videoURL) {
@@ -765,52 +880,64 @@ function openPinVideo(pin, index) {
         _pvoFill.style.width = '0%';
         _pvoFill.style.background = `linear-gradient(90deg, ${color}, var(--neon-blue))`;
 
-        // Position
+        // Position — anchored to HUD arrow tip
         _repositionPVO();
 
-        // Show with GSAP spring
+        // Animate in
         _pvoEl.style.display = 'flex';
         gsap.fromTo(_pvoEl,
-            { scale: 0.78, opacity: 0, y: 12 },
-            { scale: 1, opacity: 1, y: 0, duration: 0.42, ease: 'back.out(1.8)' }
+            { scaleX: 0.6, scaleY: 0.8, opacity: 0 },
+            {
+                scaleX: 1, scaleY: 1, opacity: 1, duration: 0.38, ease: 'back.out(1.6)',
+                transformOrigin: 'top left'
+            }
         );
 
-        // Duration: 5s with video, 2.5s without
-        const durationMs = pin.videoURL ? 5000 : 2500;
-
-        // Progress bar fill animation
-        const barStart = performance.now();
+        // Progress bar — driven by actual video time if video, else fixed 3s
         cancelAnimationFrame(_pvoTimer);
-        function tickBar(now) {
-            const pct = Math.min((now - barStart) / durationMs * 100, 100);
-            _pvoFill.style.width = pct + '%';
-            if (pct < 100) _pvoTimer = requestAnimationFrame(tickBar);
-        }
-        _pvoTimer = requestAnimationFrame(tickBar);
-
         if (pin.videoURL) {
+            // Tick bar based on video currentTime / duration
+            function tickVideoBar() {
+                if (!_pvoVideo.duration) { _pvoTimer = requestAnimationFrame(tickVideoBar); return; }
+                const pct = Math.min((_pvoVideo.currentTime / _pvoVideo.duration) * 100, 100);
+                _pvoFill.style.width = pct + '%';
+                if (pct < 100) _pvoTimer = requestAnimationFrame(tickVideoBar);
+            }
+            _pvoTimer = requestAnimationFrame(tickVideoBar);
             _pvoVideo.play().catch(() => { });
+        } else {
+            // Fixed 3s bar for no-video case
+            const barStart = performance.now();
+            const dur = 3000;
+            function tickFixedBar(now) {
+                const pct = Math.min((now - barStart) / dur * 100, 100);
+                _pvoFill.style.width = pct + '%';
+                if (pct < 100) _pvoTimer = requestAnimationFrame(tickFixedBar);
+            }
+            _pvoTimer = requestAnimationFrame(tickFixedBar);
         }
 
-        // Auto-close
-        let autoTimer = setTimeout(closePVO, durationMs);
+        // Advance: wait for video end, or 3s for no-video
+        let autoTimer = null;
         if (pin.videoURL) {
-            _pvoVideo.addEventListener('ended', () => {
-                clearTimeout(autoTimer);
-                closePVO();
-            }, { once: true });
+            _pvoVideo.addEventListener('ended', () => closePVO(), { once: true });
+        } else {
+            autoTimer = setTimeout(closePVO, 3000);
         }
 
         function closePVO() {
-            clearTimeout(autoTimer);
+            if (autoTimer) clearTimeout(autoTimer);
             cancelAnimationFrame(_pvoTimer);
+            state.activeTourPinId = null;
             gsap.to(_pvoEl, {
-                scale: 0.82, opacity: 0, y: 10, duration: 0.26, ease: 'power2.in',
+                scaleX: 0.6, scaleY: 0.8, opacity: 0, duration: 0.24, ease: 'power2.in',
+                transformOrigin: 'top left',
                 onComplete: () => {
                     _pvoEl.style.display = 'none';
                     _pvoVideo.pause();
                     _pvoVideo.src = '';
                     _pvoPin = null;
+                    drawPath(1); // refresh — HUD arrow disappears, visited callout shows
                     resolve();
                 }
             });
@@ -897,9 +1024,11 @@ async function startTour() {
 
 function stopTour() {
     state.isTourPlaying = false;
+    state.visitedPins.clear();
+    state.activeTourPinId = null;
     tourProgress.style.display = 'none';
     document.getElementById('btnPlay').style.display = '';
-    // Close both overlays if open
+    // Close overlays if open
     closePinVideoImmediate();
     if (modalBackdrop.classList.contains('open')) {
         closeModal(false);

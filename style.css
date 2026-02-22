@@ -672,27 +672,59 @@ body.adding-pin #map {
   cursor: crosshair;
 }
 
-/* ─── PIN VIDEO OVERLAY ──────────────────────── */
+/* ─── PIN VIDEO OVERLAY — HUD Sci-fi Style ───── */
 .pvo {
   position: fixed;
   z-index: 300;
-  width: 260px;
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, .75), 0 0 0 1px var(--border-bright);
+  width: 270px;
   display: none;
   /* shown via JS */
   flex-direction: column;
+  background: rgba(4, 10, 22, 0.93);
+  border: 1px solid rgba(36, 123, 255, 0.4);
+  /* Angular clip corners matching HUD reference */
+  clip-path: polygon(0 0,
+      calc(100% - 14px) 0,
+      100% 14px,
+      100% 100%,
+      14px 100%,
+      0 calc(100% - 14px));
   transform-origin: top left;
+}
+
+/* HUD top strip — scan-line accent bar */
+.pvo::before {
+  content: '';
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: var(--hud-color, var(--neon-blue));
+  opacity: 0.9;
+  box-shadow: 0 0 8px var(--hud-color, var(--neon-blue));
+  flex-shrink: 0;
+}
+
+/* Corner tick marks */
+.pvo::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-left: 2px solid var(--hud-color, var(--neon-blue));
+  border-bottom: 2px solid var(--hud-color, var(--neon-blue));
+  opacity: 0.7;
 }
 
 .pvo-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 12px 7px;
+  border-bottom: 1px solid rgba(36, 123, 255, 0.15);
   flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .pvo-badge {
@@ -706,24 +738,24 @@ body.adding-pin #map {
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
-  /* colour set via JS inline style */
 }
 
 .pvo-name {
   flex: 1;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .pvo-close {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
   background: transparent;
   border: 1px solid transparent;
   display: flex;
@@ -765,11 +797,14 @@ body.adding-pin #map {
   gap: 8px;
   color: var(--text-muted);
   font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .pvo-progress-track {
   height: 3px;
-  background: rgba(255, 255, 255, .06);
+  background: rgba(255, 255, 255, .05);
   flex-shrink: 0;
 }
 
@@ -777,14 +812,15 @@ body.adding-pin #map {
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, var(--neon-red), var(--neon-blue));
-  box-shadow: 0 0 8px var(--neon-glow-b);
-  transition: width 0.1s linear;
-  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 6px var(--neon-glow-b);
+  transition: width 0.08s linear;
 }
 
 .pvo-coords {
-  padding: 5px 12px 8px;
+  padding: 4px 12px 7px;
   font-size: 10px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  font-family: 'SF Mono', 'Roboto Mono', monospace;
 }
