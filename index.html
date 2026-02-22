@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Map Trailer — Neon Path Studio</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- Google Fonts: Inter for body, used as SF Pro fallback -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- ░░ MAP ░░ -->
+  <div id="map"></div>
+
+  <!-- ░░ CANVAS OVERLAY (glowing path) ░░ -->
+  <canvas id="pathCanvas"></canvas>
+
+  <!-- ░░ TOP BAR ░░ -->
+  <header class="topbar glass">
+    <div class="topbar-brand">
+      <span class="brand-dot"></span>
+      <span class="brand-name">Map Trailer</span>
+      <span class="brand-tag">Neon Path Studio</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost" id="btnAddPin" title="Add Stopover Pin">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+          <circle cx="12" cy="9" r="2.5" />
+        </svg>
+        Add Pin
+      </button>
+      <button class="btn btn-ghost" id="btnClearAll" title="Clear everything">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14H6L5 6" />
+          <path d="M10 11v6M14 11v6" />
+          <path d="M9 6V4h6v2" />
+        </svg>
+        Clear
+      </button>
+      <button class="btn btn-primary" id="btnPlay">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21 5 3" />
+        </svg>
+        Play Tour
+      </button>
+    </div>
+  </header>
+
+  <!-- ░░ SIDEBAR ░░ -->
+  <aside class="sidebar glass" id="sidebar">
+    <div class="sidebar-header">
+      <h2 class="sidebar-title">Stopovers</h2>
+      <span class="sidebar-count" id="pinCount">0 pins</span>
+    </div>
+    <div class="sidebar-list" id="pinList">
+      <div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+          opacity=".4">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+          <circle cx="12" cy="9" r="2.5" />
+        </svg>
+        <p>Click <strong>Add Pin</strong> then<br>click on the map</p>
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="hint">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 16v-4M12 8h.01" />
+        </svg>
+        Drag pins to reorder the route
+      </div>
+    </div>
+  </aside>
+
+  <!-- ░░ ADD-PIN CURSOR NOTICE ░░ -->
+  <div class="map-notice glass" id="mapNotice" style="display:none">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff4d6d" stroke-width="2.5">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+      <circle cx="12" cy="9" r="2.5" />
+    </svg>
+    Click anywhere on the map to place a pin &nbsp; <kbd>Esc</kbd> to cancel
+  </div>
+
+  <!-- ░░ VIDEO MODAL ░░ -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal glass" id="videoModal">
+      <div class="modal-header">
+        <div class="modal-pin-info">
+          <span class="modal-pin-dot"></span>
+          <span id="modalPinName">Stopover</span>
+        </div>
+        <button class="modal-close" id="modalClose">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-video-wrap">
+        <video id="modalVideo" controls playsinline></video>
+        <div class="video-placeholder" id="videoPlaceholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+            opacity=".5">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+          <p>No video assigned to this pin</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-coords" id="modalCoords"></div>
+        <button class="btn btn-ghost modal-skip" id="modalSkip">Skip →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ░░ TOUR PROGRESS BAR ░░ -->
+  <div class="tour-progress" id="tourProgress" style="display:none">
+    <div class="tour-progress-inner">
+      <div class="tp-info">
+        <span class="tp-label">Touring</span>
+        <span id="tpStep">1 / 1</span>
+      </div>
+      <div class="tp-bar-track">
+        <div class="tp-bar-fill" id="tpBarFill"></div>
+      </div>
+      <button class="btn btn-ghost tp-stop" id="btnStop">Stop</button>
+    </div>
+  </div>
+
+  <!-- ░░ PIN VIDEO OVERLAY (plays video in callout box) ░░ -->
+  <div class="pvo glass" id="pinVideoOverlay" style="display:none">
+    <div class="pvo-header">
+      <div class="pvo-badge" id="pvoBadge">1</div>
+      <span class="pvo-name" id="pvoName">Stopover</span>
+      <button class="pvo-close" id="pvoClose" title="Skip">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+    <div class="pvo-video-wrap">
+      <video id="pvoVideo" playsinline></video>
+      <div class="pvo-no-video" id="pvoNoVideo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+          opacity=".45">
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <path d="M8 21h8M12 17v4" />
+        </svg>
+        <span>No video attached</span>
+      </div>
+    </div>
+    <div class="pvo-progress-track">
+      <div class="pvo-progress-fill" id="pvoProgressFill"></div>
+    </div>
+    <div class="pvo-coords" id="pvoCoords"></div>
+  </div>
+
+  <!-- ░░ SCRIPTS ░░ -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
